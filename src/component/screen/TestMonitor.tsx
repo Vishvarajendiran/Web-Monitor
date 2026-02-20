@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { checkIpApi, logEventApi, startTestApi } from "../../api"
 import "./TestMonitor.css"
-import { Alert, CircularProgress, Slide, Snackbar, type SlideProps } from "@mui/material"
+import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Slide, Snackbar, type SlideProps } from "@mui/material"
 
 function SlideTransition(props: SlideProps) {
     return <Slide {...props} direction="down" />
@@ -16,7 +16,8 @@ const TestMonitor = () => {
     const [ipCount, setIpCount] = useState<number>(0)
     const [status, setStatus] = useState<string>("NORMAL")
     const [lastWarningCount, setLastWarningCount] = useState(0)
-    const [timeLeft, setTimeLeft] = useState(300)
+    const [timeLeft, setTimeLeft] = useState(10)
+    const [openConfirm, setOpenConfirm] = useState<boolean>(false)
 
 
     const handleStartTest = async () => {
@@ -106,54 +107,81 @@ const TestMonitor = () => {
     }, [attemptId])
 
 
-   useEffect(() => {
+    useEffect(() => {
 
-    const isTestActive = attemptId && timeLeft > 0 && status !== "SUSPICIOUS"
+        const isTestActive = attemptId && timeLeft > 0 && status !== "SUSPICIOUS"
 
-    if (!isTestActive) return
+        if (!isTestActive) return
 
-    const handleTabSwitcher = () => {
-        if (document.hidden && isTestActive) {
-            logEventApi(attemptId, "TAB_SWITCH_DETECTED", {})
-            setSnackMessage("Tab switched detected")
+        const handleTabSwitcher = () => {
+            if (document.hidden && isTestActive) {
+                logEventApi(attemptId, "TAB_SWITCH_DETECTED", {})
+                setSnackMessage("Tab switched detected")
+                setOpenSnackBar(true)
+            }
+        }
+
+        const handleCopyPasteDiducter = (e: ClipboardEvent) => {
+            if (!isTestActive) return
+
+            e.preventDefault()
+
+            logEventApi(attemptId, "COPY_PASTE_ATTEMPT", { type: e.type })
+            setSnackMessage("Copy Paste is disabled.")
             setOpenSnackBar(true)
+        }
+
+        const handleFullScreenChecker = () => {
+            if (!isTestActive) return
+
+            if (!document.fullscreenElement) {
+                logEventApi(attemptId, "FULLSCREEN_EXITED", {})
+                setSnackMessage("You exited fullscreen.")
+                setOpenSnackBar(true)
+            }
+        }
+
+        document.addEventListener("visibilitychange", handleTabSwitcher)
+        document.addEventListener("copy", handleCopyPasteDiducter)
+        document.addEventListener("paste", handleCopyPasteDiducter)
+        document.addEventListener("fullscreenchange", handleFullScreenChecker)
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleTabSwitcher)
+            document.removeEventListener("copy", handleCopyPasteDiducter)
+            document.removeEventListener("paste", handleCopyPasteDiducter)
+            document.removeEventListener("fullscreenchange", handleFullScreenChecker)
+        }
+
+    }, [attemptId, timeLeft, status])
+
+    const handleConfirmEndTest = async () => {
+        try {
+            if (attemptId && timeLeft > 0) {
+                await logEventApi(attemptId, "TEST_ENDED_BY_USER", {})
+            }
+
+
+            if (document.fullscreenElement) {
+                await document.exitFullscreen()
+            }
+
+            setAttemptId("")
+            setTimeLeft(300)
+            setIpCount(0)
+            setStatus("NORMAL")
+            setLastWarningCount(0)
+
+        } catch (error) {
+            console.error(error)
+        } finally {
+            setOpenConfirm(false)
         }
     }
 
-    const handleCopyPasteDiducter = (e: ClipboardEvent) => {
-        if (!isTestActive) return
-
-        e.preventDefault()
-
-        logEventApi(attemptId, "COPY_PASTE_ATTEMPT", { type: e.type })
-        setSnackMessage("Copy Paste is disabled.")
-        setOpenSnackBar(true)
+    const endTestHandler = () => {
+        setOpenConfirm(true)
     }
-
-    const handleFullScreenChecker = () => {
-        if (!isTestActive) return
-
-        if (!document.fullscreenElement) {
-            logEventApi(attemptId, "FULLSCREEN_EXITED", {})
-            setSnackMessage("You exited fullscreen.")
-            setOpenSnackBar(true)
-        }
-    }
-
-    document.addEventListener("visibilitychange", handleTabSwitcher)
-    document.addEventListener("copy", handleCopyPasteDiducter)
-    document.addEventListener("paste", handleCopyPasteDiducter)
-    document.addEventListener("fullscreenchange", handleFullScreenChecker)
-
-    return () => {
-        document.removeEventListener("visibilitychange", handleTabSwitcher)
-        document.removeEventListener("copy", handleCopyPasteDiducter)
-        document.removeEventListener("paste", handleCopyPasteDiducter)
-        document.removeEventListener("fullscreenchange", handleFullScreenChecker)
-    }
-
-}, [attemptId, timeLeft, status])
-
 
     return (
         <div className="container ">
@@ -234,7 +262,22 @@ const TestMonitor = () => {
                             </Alert>
                         </Snackbar>
 
-                        <h5 className="mb-3">Write about yourself?</h5>
+                        <Dialog open={openConfirm} onClose={() => setOpenConfirm(false)} fullWidth>
+                            <DialogTitle>End Test?</DialogTitle>
+                            <DialogContent>
+                                Are you sure you want to end the test?
+                            </DialogContent>
+                            <DialogActions>
+                                <Button onClick={() => setOpenConfirm(false)} color="inherit">
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleConfirmEndTest} color="error" variant="contained">
+                                    Yes, Submit
+                                </Button>
+                            </DialogActions>
+                        </Dialog>
+
+                        <h5 className="mb-3">What is React.Js ?</h5>
 
                         <textarea
                             className="form-control"
@@ -244,6 +287,7 @@ const TestMonitor = () => {
                             style={{ fontSize: "16px", cursor: timeLeft === 0 ? "not-allowed" : "default" }}
                         />
                         <div className="col-12 d-flex justify-content-end mt-4">
+                            <button className="btn btn-success px-4 py-2 attempt-test-btn" onClick={endTestHandler}>Submit Test</button>
                         </div>
                     </div>
                 </div>
