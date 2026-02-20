@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { checkIpApi, logEventApi, startTestApi } from "../../api"
 import "./TestMonitor.css"
 import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Slide, Snackbar, type SlideProps } from "@mui/material"
@@ -16,8 +16,10 @@ const TestMonitor = () => {
     const [ipCount, setIpCount] = useState<number>(0)
     const [status, setStatus] = useState<string>("NORMAL")
     const [lastWarningCount, setLastWarningCount] = useState(0)
-    const [timeLeft, setTimeLeft] = useState(10)
+    const [timeLeft, setTimeLeft] = useState(300)
     const [openConfirm, setOpenConfirm] = useState<boolean>(false)
+    const isManualExit = useRef(false)
+    const [endLoading, setEndLoading] = useState(false)
 
 
     const handleStartTest = async () => {
@@ -135,6 +137,12 @@ const TestMonitor = () => {
             if (!isTestActive) return
 
             if (!document.fullscreenElement) {
+
+                if (isManualExit.current) {
+                    isManualExit.current = false   
+                    return
+                }
+
                 logEventApi(attemptId, "FULLSCREEN_EXITED", {})
                 setSnackMessage("You exited fullscreen.")
                 setOpenSnackBar(true)
@@ -155,30 +163,33 @@ const TestMonitor = () => {
 
     }, [attemptId, timeLeft, status])
 
-    const handleConfirmEndTest = async () => {
-        try {
-            if (attemptId && timeLeft > 0) {
-                await logEventApi(attemptId, "TEST_ENDED_BY_USER", {})
-            }
+   const handleConfirmEndTest = async () => {
+    try {
+        setEndLoading(true)   
 
-
-            if (document.fullscreenElement) {
-                await document.exitFullscreen()
-            }
-
-            setAttemptId("")
-            setTimeLeft(300)
-            setIpCount(0)
-            setStatus("NORMAL")
-            setLastWarningCount(0)
-
-        } catch (error) {
-            console.error(error)
-        } finally {
-            setOpenConfirm(false)
+        if (attemptId && timeLeft > 0) {
+            await logEventApi(attemptId, "TEST_ENDED_BY_USER", {})
         }
-    }
 
+        if (document.fullscreenElement) {
+            isManualExit.current = true
+            await document.exitFullscreen()
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 800))
+        setAttemptId("")
+        setTimeLeft(300)
+        setIpCount(0)
+        setStatus("NORMAL")
+        setLastWarningCount(0)
+
+    } catch (error) {
+        console.error(error)
+    } finally {
+        setEndLoading(false)
+        setOpenConfirm(false)
+    }
+}
     const endTestHandler = () => {
         setOpenConfirm(true)
     }
@@ -186,9 +197,9 @@ const TestMonitor = () => {
     return (
         <div className="container ">
 
-            {!attemptId ? (
+            {!attemptId||endLoading ?(
                 <div className="d-flex justify-content-center align-items-center vh-100">
-                    {loading ? (
+                    {loading ||endLoading ? (
                         <CircularProgress size={30} />
                     ) : (
                         <button
